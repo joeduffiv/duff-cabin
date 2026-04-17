@@ -875,9 +875,8 @@
 
 <script>
 // ── FIREBASE CONFIG ───────────────────────────────────────────────────────
-const FIREBASE_URL = 'https://duff-cabin-default-rtdb.firebaseio.com';
-const FIREBASE_CONFIGURED = FIREBASE_URL && !FIREBASE_URL.includes('YOUR_FIREBASE');
-const OWNER_NAME = 'Joe Duff IV'; // Change to your name to see owner controls
+// FIREBASE_URL, OWNER_NAME, OWNER_EMAIL, OWNER_PHONE, WX_LAT, WX_LON are defined in config.js
+const FIREBASE_CONFIGURED = typeof FIREBASE_URL !== 'undefined' && !!FIREBASE_URL && !FIREBASE_URL.includes('YOUR_FIREBASE');
 
 // ── HUNTING SEASONS (update each April when PGC releases dates) ───────────
 // To edit dates: tap the pencil icon on any season card while using the app,
@@ -953,15 +952,14 @@ let namePromptCallback = null;
 const localLists = { shopping:{}, projects:{} };
 let pollTimers = {};
 const offlineQueue = [];
-const OWNER_EMAIL = 'joeiv@duffbuilders.com';
-const OWNER_PHONE = '7175879426';
+// OWNER_EMAIL and OWNER_PHONE are defined in config.js
 
 // ── NAME MEMORY ───────────────────────────────────────────────────────────
 function getSavedName() {
   try { return localStorage.getItem('duff_username') || ''; } catch(e) { return ''; }
 }
 function setSavedName(name) {
-  try { localStorage.setItem('duff_username', name); } catch(e) {}
+  try { localStorage.setItem('duff_username', name); } catch(e) { console.error('[duff-cabin] setSavedName:', e); }
 }
 function getCurrentName() {
   return state.leaverName || getSavedName() || '';
@@ -982,7 +980,7 @@ function closeNamePrompt() {
 }
 function saveNamePrompt() {
   const name = document.getElementById('name-prompt-input').value.trim();
-  if (!name) return;
+  if (!name || name.length > 50) return;
   setSavedName(name);
   document.getElementById('name-prompt-overlay').style.display = 'none';
   if (namePromptCallback) { namePromptCallback(name); namePromptCallback = null; }
@@ -1001,10 +999,10 @@ function loadState() {
     if (saved.date === TODAY) {
       state = { done:saved.done||{}, photos:saved.photos||{}, winterize:saved.winterize||false, leaverName:saved.leaverName||'' };
     }
-  } catch(e) {}
+  } catch(e) { console.error('[duff-cabin] loadState:', e); }
 }
 function saveState() {
-  try { localStorage.setItem(SK, JSON.stringify({ date:TODAY, ...state })); } catch(e) {}
+  try { localStorage.setItem(SK, JSON.stringify({ date:TODAY, ...state })); } catch(e) { console.error('[duff-cabin] saveState:', e); }
 }
 
 // ── TAB SWITCHING ────────────────────────────────────────────────────────
@@ -1077,7 +1075,7 @@ function buildChecklist() {
   sections.forEach(sec => {
     const sDiv = document.createElement('div'); sDiv.className = 'section';
     const hDiv = document.createElement('div'); hDiv.className = 'section-header';
-    hDiv.innerHTML = `<span class="section-title">${sec.section}</span><div class="section-line"></div>`;
+    hDiv.innerHTML = `<span class="section-title">${escHtml(sec.section)}</span><div class="section-line"></div>`;
     sDiv.appendChild(hDiv);
     sec.items.forEach(task => {
       activeTasks.push(task.id);
@@ -1097,8 +1095,8 @@ function makeTaskEl(task, isWinter) {
   div.innerHTML = `
     <div class="checkbox">${state.done[task.id]?'✓':''}</div>
     <div class="task-content">
-      <div class="task-name">${task.name}</div>
-      ${task.note?`<div class="task-note">${task.note}</div>`:''}
+      <div class="task-name">${escHtml(task.name)}</div>
+      ${task.note?`<div class="task-note">${escHtml(task.note)}</div>`:''}
     </div>
     <div class="photo-slot ${photo?'has-photo':''}" onclick="triggerPhoto(event,'${task.id}')">
       ${photo?`<img src="${photo}" alt="">` :'📷'}
@@ -1110,7 +1108,9 @@ function makeTaskEl(task, isWinter) {
 function toggleTask(id) {
   state.done[id] = !state.done[id]; saveState();
   const el = document.getElementById('task-'+id);
+  if (!el) return;
   const cb = el.querySelector('.checkbox');
+  if (!cb) return;
   if (state.done[id]) { el.classList.add('done'); cb.textContent='✓'; }
   else { el.classList.remove('done'); cb.textContent=''; }
   if (id==='out_flag' && state.done[id]) openFlagAudio();
@@ -1119,6 +1119,7 @@ function toggleTask(id) {
 
 function openFlagAudio() {
   const a = document.getElementById('flag-audio');
+  if (!a) return;
   a.currentTime = 0;
   const p = a.play(); if (p) p.catch(()=>{});
 }
@@ -1183,7 +1184,7 @@ function showDone() {
   currentTab='done'; window.scrollTo(0,0);
   if (FIREBASE_CONFIGURED) {
     fetch(`${FIREBASE_URL}/lastDeparture.json`,{method:'PUT',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,date:dateShort,winterize:state.winterize,ts:Date.now()})}).catch(()=>{});
+      body:JSON.stringify({name,date:dateShort,winterize:state.winterize,ts:Date.now()})}).catch(e=>console.error('[duff-cabin] lastDeparture write:', e));
   }
 }
 
@@ -1235,7 +1236,7 @@ function goHome() {
 }
 
 // ── FIREBASE HELPERS ──────────────────────────────────────────────────────
-function saveQueue() { try { localStorage.setItem('duff_queue_v8',JSON.stringify(offlineQueue)); } catch(e){} }
+function saveQueue() { try { localStorage.setItem('duff_queue_v8',JSON.stringify(offlineQueue)); } catch(e){ console.error('[duff-cabin] saveQueue:', e); } }
 async function flushQueue() {
   if(!FIREBASE_CONFIGURED||offlineQueue.length===0) return;
   for(const op of [...offlineQueue]) {
@@ -1243,7 +1244,7 @@ async function flushQueue() {
       if(op.type==='put') await fetch(`${FIREBASE_URL}/${op.list}/${op.id}.json`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(op.item)});
       else await fetch(`${FIREBASE_URL}/${op.list}/${op.id}.json`,{method:'DELETE'});
       const idx=offlineQueue.indexOf(op); if(idx>=0) offlineQueue.splice(idx,1);
-    } catch(e){ break; }
+    } catch(e){ console.error('[duff-cabin] flushQueue:', e); break; }
   }
   saveQueue();
 }
@@ -1330,6 +1331,17 @@ function renderList(list,data) {
   });
 }
 
+// ── FIREBASE ITEM HELPER ─────────────────────────────────────────────────────
+async function updateItemAndRefresh(list, id, updateFn) {
+  const r = await fetch(`${FIREBASE_URL}/${list}/${id}.json`);
+  if (!r.ok) throw new Error(r.status);
+  const item = await r.json();
+  updateFn(item);
+  await saveItem(list, id, item);
+  const data = await fetchList(list);
+  if (data) renderList(list, data);
+}
+
 // ── EDIT MODAL ────────────────────────────────────────────────────────────
 function openEditModal(list,id,text) {
   editTarget={list,id};
@@ -1341,15 +1353,12 @@ function closeEditModal() { document.getElementById('edit-modal-overlay').classL
 function closeEditIfOverlay(e) { if(e.target===document.getElementById('edit-modal-overlay')) closeEditModal(); }
 async function saveEdit() {
   const text=document.getElementById('edit-text-input').value.trim();
-  if(!text||!editTarget.list){ closeEditModal(); return; }
+  if(!text || text.length > 200 || !editTarget.list){ closeEditModal(); return; }
   const {list,id}=editTarget; closeEditModal();
   if(!FIREBASE_CONFIGURED){ if(localLists[list][id]) localLists[list][id].text=text; renderList(list,null); return; }
   try {
-    const r=await fetch(`${FIREBASE_URL}/${list}/${id}.json`);
-    const item=await r.json(); item.text=text;
-    await saveItem(list,id,item);
-    const data=await fetchList(list); if(data) renderList(list,data);
-  } catch(e){}
+    await updateItemAndRefresh(list, id, item => { item.text = text; });
+  } catch(e){ console.error('[duff-cabin] saveEdit:', e); }
 }
 document.getElementById('edit-text-input').addEventListener('keydown',e=>{ if(e.key==='Enter') saveEdit(); if(e.key==='Escape') closeEditModal(); });
 
@@ -1358,11 +1367,8 @@ async function cyclePriority(e,list,id) {
   e.stopPropagation();
   if(!FIREBASE_CONFIGURED){ if(localLists[list][id]) localLists[list][id].priority=((localLists[list][id].priority||0)+1)%4; renderList(list,null); return; }
   try {
-    const r=await fetch(`${FIREBASE_URL}/${list}/${id}.json`);
-    const item=await r.json(); item.priority=((item.priority||0)+1)%4;
-    await saveItem(list,id,item);
-    const data=await fetchList(list); if(data) renderList(list,data);
-  } catch(e){}
+    await updateItemAndRefresh(list, id, item => { item.priority = ((item.priority||0)+1)%4; });
+  } catch(e){ console.error('[duff-cabin] cyclePriority:', e); }
 }
 
 // ── SHARED LIST INIT ──────────────────────────────────────────────────────
@@ -1392,7 +1398,7 @@ function setupEnterKey(list) {
 
 async function addShopItem() {
   const input=document.getElementById('shop-input');
-  const text=input.value.trim(); if(!text) return;
+  const text=input.value.trim(); if(!text || text.length > 200) return;
   requireName(async name=>{
     input.value='';
     const id='i'+Date.now();
@@ -1405,7 +1411,7 @@ async function addShopItem() {
 
 async function addProjItem() {
   const input=document.getElementById('proj-input');
-  const text=input.value.trim(); if(!text) return;
+  const text=input.value.trim(); if(!text || text.length > 200) return;
   requireName(async name=>{
     input.value='';
     const id='i'+Date.now();
@@ -1419,11 +1425,8 @@ async function addProjItem() {
 async function toggleListItem(list,id) {
   if(!FIREBASE_CONFIGURED){ localLists[list][id].done=!localLists[list][id].done; renderList(list,null); return; }
   try {
-    const r=await fetch(`${FIREBASE_URL}/${list}/${id}.json`);
-    const item=await r.json(); item.done=!item.done;
-    await saveItem(list,id,item);
-    const data=await fetchList(list); if(data) renderList(list,data);
-  } catch(e){}
+    await updateItemAndRefresh(list, id, item => { item.done = !item.done; });
+  } catch(e){ console.error('[duff-cabin] toggleListItem:', e); }
 }
 async function removeListItem(list,id) {
   if(!FIREBASE_CONFIGURED){ delete localLists[list][id]; renderList(list,null); return; }
@@ -1443,8 +1446,7 @@ async function clearDone(list) {
 }
 
 // ── WEATHER ───────────────────────────────────────────────────────────────
-// Three Springs, PA coordinates
-const WX_LAT = 40.188, WX_LON = -77.985;
+// WX_LAT and WX_LON are defined in config.js
 
 function wxIcon(code, isDay) {
   const icons = {
@@ -1533,7 +1535,7 @@ async function initHunting() {
           seasons = DEFAULT_SEASONS.map(s => saved[s.id] ? {...s, ...saved[s.id]} : s);
         }
       }
-    } catch(e) {}
+    } catch(e) { console.error('[duff-cabin] initHunting seasons:', e); }
   }
 
   // Load RSVPs
@@ -1554,7 +1556,7 @@ async function initHunting() {
     try {
       const r3 = await fetch(`${FIREBASE_URL}/hunt_notes.json`);
       if (r3.ok) { const d=await r3.json(); if(d) notes=d; }
-    } catch(e) {}
+    } catch(e) { console.error('[duff-cabin] initHunting notes:', e); }
   }
 
   renderHunting(seasons, rsvps, isOwner, notes);
@@ -1714,7 +1716,7 @@ function closeDateEditIfOverlay(e) {
 async function saveDateEdit() {
   const start = document.getElementById('date-edit-start').value.trim();
   const end   = document.getElementById('date-edit-end').value.trim();
-  if(!start||!end||!dateEditTarget) { closeDateEdit(); return; }
+  if(!start||!end||!dateEditTarget||isNaN(Date.parse(start))||isNaN(Date.parse(end))) { closeDateEdit(); return; }
   const id = dateEditTarget; closeDateEdit();
   if (FIREBASE_CONFIGURED) {
     try {
@@ -1722,7 +1724,7 @@ async function saveDateEdit() {
         method:'PUT', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({start,end})
       });
-    } catch(e) {}
+    } catch(e) { console.error('[duff-cabin] saveDateEdit:', e); }
   }
   // Update DOM immediately
   const el = document.getElementById('dates-'+id);
@@ -1883,7 +1885,7 @@ async function loadLastDeparture() {
       const mode=d.winterize?'❄️ Winterized':'Standard';
       document.getElementById('last-departure').textContent=`Last departure: ${d.name} · ${d.date} · ${mode}`;
     }
-  } catch(e) {}
+  } catch(e) { console.error('[duff-cabin] loadLastDeparture:', e); }
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────
@@ -1901,7 +1903,11 @@ function timeAgo(ts) {
 }
 
 // ── INIT ──────────────────────────────────────────────────────────────────
-try { const q=localStorage.getItem('duff_queue_v8'); if(q) offlineQueue.push(...JSON.parse(q)); } catch(e){}
+window.addEventListener('beforeunload', () => {
+  Object.values(pollTimers).forEach(t => clearInterval(t));
+});
+
+try { const q=localStorage.getItem('duff_queue_v8'); if(q) offlineQueue.push(...JSON.parse(q)); } catch(e){ console.error('[duff-cabin] queue load:', e); }
 loadState();
 
 // Pre-fill name from memory

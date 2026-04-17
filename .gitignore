@@ -1,0 +1,17 @@
+# Credentials — copy config.example.js → config.js and fill in values
+config.js
+
+# Backup files
+*.backup.html
+index backup.html
+index backup2.html
+index not working.html
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Dependencies (if a build step is ever added)
+node_modules/
